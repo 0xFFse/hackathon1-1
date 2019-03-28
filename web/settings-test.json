@@ -1,0 +1,4 @@
+{
+    "URL_PREFIX": "/sms-service-api",
+    "sharedSecret": "changeme"
+}

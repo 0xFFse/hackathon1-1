@@ -1,0 +1,16 @@
+{
+  "name": "sms-device",
+  "version": "0.0.1",
+  "description": "SMS receiving device",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "node-pdu": "^1.0.15",
+    "request": "^2.88.0",
+    "serialport": "^7.1.4"
+  }
+}
