@@ -1,4 +1,5 @@
 {
+	"loglevel": "debug",
 	"serialport": "/dev/ttyS0",
 	"baudrate": 115200,
 	"number": "1234567",
