@@ -1,31 +1,54 @@
 "use-strict";
-require('console-stamp')(console, { pattern: 'yyyy-mm-dd HH:MM:ss.l' });
+const logger = require('./logger.js');
+
+// express for http request handling
 const express = require('express');
+
+// body parser to parse post data
 const bodyParser = require('body-parser');
+
+// bcrypt for secret hash
+const bcryptjs = require('bcryptjs');
+
+// helmet to add some security headers etc
 const helmet = require('helmet');
+
+// rate limiter to limit abuse of service like brute forcing secret
 const { RateLimiterMemory } = require('rate-limiter-flexible');
 
 const settings = require(process.env.NODE_ENV === 'test' ? './settings-test.json' : './settings.json');
 
+
+// get the db functionality
 const db = require('./db.js')
 
+// initialize express with helmet and bodyparser middleware
 const app = express();
 app.use(helmet());
 app.use(bodyParser.json({inflate: false, limit: '2kb'}));
 
+// add rate limiting, max 20 requests in 5 seconds then get banned for 30 seconds
 const rateLimiter = new RateLimiterMemory({
     points: 20,
     duration: 5,
     blockDuration: 30
 });
 app.use((req, res, next) => {
-    rateLimiter.consume(req.connection.remoteAddress).then(() => {
+    //rate limit per request IP
+    //NOTE: We are using an Nginx to forward requests to the API, hence we cannot check
+    //   the req.connection.remoteAddress but instead have to use the X-Real-IP header
+    //   that we add in nginx. If you're not forwarding this request an attacker can just
+    //   send a unique X-Real-IP header to circumvent our rate limiting.
+    var realIp = req.get('X-Real-IP');
+    rateLimiter.consume(realIp ? realIp : req.connection.remoteAddress).then(() => {
         next();
     }).catch(() => {
         res.status(429).send('Too many requests');
     });
 });
 
+// the two static files are served by nginx in prod environment but we include these for
+// local use
 app.get('/', (req, res) => {
     res.sendFile(__dirname+'/static/index.html');
 });
@@ -33,41 +56,52 @@ app.get('/script.js', (req, res) => {
     res.sendFile(__dirname+'/static/script.js');
 });
 
-
-function checkSecret(req, res) {
+// check the secret using bcrypt
+function checkSecret(req, res, callback) {
     if (!req.body || !req.body.secret) {
-        res.status(403).send('Forbidden');
-        return false;
+        callback('Missing secret');
+        return;
     }
-    if (req.body.secret !== settings.sharedSecret) {
-        console.warn('Invalid secret sent from '+req.remoteAddress);
-        res.status(403).send('Forbidden');
-        return false;
-    }
-    return true;
+    bcryptjs.compare(req.body.secret, settings.sharedSecretHash, (err, result) => {
+        if (err || !result) {
+            logger.warn('Invalid secret sent from '+req.remoteAddress);
+            callback('Invalid secret');
+            return;
+        }
+        callback();
+    });
 }
+
 /**
  * Receive message from SMS device
  */
 app.post(settings.URL_PREFIX+'/message', (req, res) => {
-    if (!checkSecret(req, res))
-        return;
-
-    if (!req.body.msg || (typeof req.body.msg) !== 'string' ||
-        !req.body.toNumber || (typeof req.body.toNumber) !== 'string' ||
-        !req.body.fromNumber || (typeof req.body.fromNumber) !== 'string') {
-        console.warn('Missing message params from '+req.remoteAddress);
-        res.status(400).send('Missing/invalid params');
-        return;
-    }
-    db.storeMessage(req.body.toNumber, req.body.fromNumber, null, req.body.msg, (err) => {
+    checkSecret(req, res, (err) => {
         if (err) {
-            log.warn('Error from DB: '+err);
-            res.status(500).send('DB error');
+            res.status(403).send('Forbidden');
             return;
         }
-        console.debug('Incoming message from '+req.body.toNumber+' at '+req.connection.remoteAddress);
-        res.status(201).send('Created');
+
+        // sanity check params, total size of body is limited in nginx
+        if (!req.body.msg || (typeof req.body.msg) !== 'string' ||
+            !req.body.toNumber || (typeof req.body.toNumber) !== 'string' ||
+            !req.body.fromNumber || (typeof req.body.fromNumber) !== 'string') {
+            logger.warn('Missing message params from '+req.remoteAddress);
+            res.status(400).send('Missing/invalid params');
+            return;
+        }
+
+        // store data
+        db.storeMessage(req.body.toNumber, req.body.fromNumber, null, req.body.msg, (err) => {
+            if (err) {
+                logger.warn('Error from DB: '+err);
+                res.status(500).send('DB error');
+                return;
+            }
+            logger.debug('Incoming message from '+req.body.toNumber+' at '+req.connection.remoteAddress);
+            res.status(201).send('Created');
+        });
+
     });
 });
 
@@ -75,28 +109,37 @@ app.post(settings.URL_PREFIX+'/message', (req, res) => {
  * Register SMS device
  */
 app.post(settings.URL_PREFIX+'/device', (req, res) => {
-    if (!checkSecret(req, res))
-        return;
-    if (!req.body.number || (typeof req.body.number) !== 'string') {
-        console.warn('Missing device number from '+req.connection.remoteAddress);
-        res.status(400).send('Missing/invalid params');
-        return;
-    }
-    db.storeDevice(req.body.number, (err) => {
+    checkSecret(req, res, (err) => {
         if (err) {
-            log.warn('Error from DB: '+err);
-            res.status(500).send('DB error');
+            res.status(403).send('Forbidden');
             return;
         }
-        console.debug('Ping from '+req.body.number+' at '+req.connection.remoteAddress);
-        res.send('OK');
+        if (!req.body.number || (typeof req.body.number) !== 'string') {
+            logger.warn('Missing device number from '+req.connection.remoteAddress);
+            res.status(400).send('Missing/invalid params');
+            return;
+        }
+
+        // this will update the timestamp of the device
+        db.storeDevice(req.body.number, (err) => {
+            if (err) {
+                logger.warn('Error from DB: '+err);
+                res.status(500).send('DB error');
+                return;
+            }
+            logger.debug('Ping from '+req.body.number+' at '+req.connection.remoteAddress);
+            res.send('OK');
+        });
     });
 });
 
+/**
+ * Get numbers of all active sms devices
+ */
 app.get(settings.URL_PREFIX+'/numbers', (req, res) => {
     db.getDevices((err, numbers) => {
         if (err) {
-            console.error('Error getting devices: '+err);
+            logger.error('Error getting devices: '+err);
             res.status(500).send('Could not get devices');
             return;
         }
@@ -105,11 +148,13 @@ app.get(settings.URL_PREFIX+'/numbers', (req, res) => {
     });
 });
 
-
+/**
+ * Get all messages. Currently limited to the last 50 messages.
+ */
 app.get(settings.URL_PREFIX+'/messages', (req, res) => {
     db.getMessages((err, messages) => {
         if (err) {
-            console.error('Error getting messages: '+err);
+            logger.error('Error getting messages: '+err);
             res.status(500).send('Could not get messages');
             return;
         }
@@ -118,19 +163,23 @@ app.get(settings.URL_PREFIX+'/messages', (req, res) => {
     });
 });
 
+/**
+ * Die and roll over but don't tell what happened to the end user
+ */
 function errorHandler (err, req, res, next) {
-    console.error('Unhandled error: '+err);
+    logger.error('Unhandled error: '+err);
     res.status(500).send('error');    
 }
 app.use(errorHandler);
 
 //only listen if this is the main module (ie, not unit test)
 if (!module.parent) {
-    if (settings.secret === 'changeme') {
-        log.error('shared secret is unsecure');
+    if (settings.sharedSecretHash === 'changeme') {
+        logger.error('shared secret is unsecure');
+        process.exit(-1);
     }
-    app.listen(3001, () => {
-        console.log('Started sms service');
+    app.listen(settings.port, () => {
+        logger.info('Started sms service');
     });
 }
 

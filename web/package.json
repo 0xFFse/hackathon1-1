@@ -5,17 +5,19 @@
   "main": "index.js",
   "scripts": {
     "test": "node_modules/mocha/bin/mocha",
-    "start": "node index.js"
+    "start": "node index.js",
+    "hashsecret": "node hash_secret.js"
   },
   "author": "",
   "license": "MIT",
   "dependencies": {
+    "bcryptjs": "^2.4.3",
     "body-parser": "^1.18.3",
-    "console-stamp": "^0.2.7",
     "express": "^4.16.4",
     "helmet": "^3.16.0",
     "rate-limiter-flexible": "^0.23.3",
-    "sqlite3": "^4.0.6"
+    "sqlite3": "^4.0.6",
+    "winston": "^3.2.1"
   },
   "devDependencies": {
     "mocha": "^6.0.2",

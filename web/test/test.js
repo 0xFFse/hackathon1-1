@@ -2,6 +2,7 @@
 const supertest = require("supertest");
 const should = require("should");
 const fs = require('fs');
+const bcryptjs = require('bcryptjs');
 
 //const server = supertest.agent('http://127.0.0.1:3001');
 
@@ -60,7 +61,7 @@ describe("API",function(){
             }
             done();
         });
-        settings.sharedSecret = 'abcd';
+        settings.sharedSecretHash = bcryptjs.hashSync('abcd');
     });
     after(() => {
         db.close();

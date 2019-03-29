@@ -1,24 +1,32 @@
+"use-strict";
+const logger = require('./logger.js');
+
 const sqlite3 = require('sqlite3');
 
 var db;
 
+/**
+ * Init the db
+ */
 exports.init = function (dbFile, callback) {
     if (db)
         db.close();
     db = new sqlite3.Database(dbFile, (err) => {
         if (err) {
-            console.error('failed to open db: '+err);
+            logger.error('failed to open db: '+err);
             if (callback)
                 callback(err);
         } else {
-            console.debug('opened db');
+            logger.debug('opened db');
+
+            // Try and populate DB tables to get started if the db file isn't there
             db.run('CREATE TABLE Device(number TEXT PRIMARY KEY, ts INTEGER NOT NULL)', (err) => {
                 if (!err) {
-                    console.info('created Device table');
+                    logger.info('created Device table');
                 }
                 db.run('CREATE TABLE Message(id INTEGER PRIMARY_KEY, ts INTEGER NOT NULL, toNumber TEXT NOT NULL, fromNumber TEXT NOT NULL, fromName TEXT, msg TEXT NOT NULL)', (err) => {
                     if (!err) {
-                        console.info('created Message table');
+                        logger.info('created Message table');
                     }
                     if (callback)
                         callback();
@@ -32,21 +40,21 @@ exports.init('db/main.db');
 function cleanup() {
     db.run("DELETE FROM Device WHERE ts < DATE('now','-30 days')", function(err) {
         if (err) {
-            console.error('could not delete old devices: '+err);
+            logger.error('could not delete old devices: '+err);
             return;
         }
         if (this.changes > 0) {
-            console.info('deleted '+this.changes+' old devices');
+            logger.info('deleted '+this.changes+' old devices');
         }
     });
     /*
     db.run("UPDATE Message SET msg = '' WHERE ts < DATE('now','-7 days')", function(err) {
         if (err) {
-            console.error('could not delete old messages: '+err);
+            logger.error('could not delete old messages: '+err);
             return;
         }
         if (this.changes > 0) {
-            console.debug('deleted '+this.changes+' old messages');
+            logger.debug('deleted '+this.changes+' old messages');
         }
     });
     */
