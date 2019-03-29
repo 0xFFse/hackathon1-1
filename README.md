@@ -89,9 +89,9 @@ We didn't have time to do many of the bonus tasks but managed to do some. To be 
 
 +10 	Code has unit-test with good coverage
 
-+10 	Website is "all green" on Webbkoll
++10 	Website is "all green" on [Webbkoll](https://webbkoll.dataskydd.net/en/results?url=http%3A%2F%2Fhackathon1-1.0xff.se%2F)
 
-+5 	The service has a A+ SSL score on SSL Labs test
++5 	The service has a A+ SSL score on [SSL Labs test](https://www.ssllabs.com/ssltest/analyze.html?d=hackathon1-1.0xff.se)
 
 +5 	The service uses rate limiting to limit abuse
 
